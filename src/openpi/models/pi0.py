@@ -88,19 +88,26 @@ class Pi0Config(_model.BaseModelConfig):
     def inputs_spec(self, *, batch_size: int = 1) -> tuple[_model.Observation, _model.Actions]:
         image_spec = jax.ShapeDtypeStruct([batch_size, *_model.IMAGE_RESOLUTION, 3], jnp.float32)
         image_mask_spec = jax.ShapeDtypeStruct([batch_size], jnp.bool_)
-
+        
         with at.disable_typechecking():
+            images = {}
+            image_masks = {}
+            for key in _model.IMAGE_KEYS:
+                images[key] = image_spec
+                image_masks[key] = image_mask_spec 
             observation_spec = _model.Observation(
-                images={
-                    "base_0_rgb": image_spec,
-                    "left_wrist_0_rgb": image_spec,
-                    "right_wrist_0_rgb": image_spec,
-                },
-                image_masks={
-                    "base_0_rgb": image_mask_spec,
-                    "left_wrist_0_rgb": image_mask_spec,
-                    "right_wrist_0_rgb": image_mask_spec,
-                },
+                # images={
+                #     "base_0_rgb": image_spec,  # FIXME
+                #     "left_wrist_0_rgb": image_spec,
+                #     "right_wrist_0_rgb": image_spec,
+                # },
+                images=images,
+                # image_masks={
+                #     "base_0_rgb": image_mask_spec,
+                #     "left_wrist_0_rgb": image_mask_spec,
+                #     "right_wrist_0_rgb": image_mask_spec,
+                # },
+                image_masks=image_masks,
                 state=jax.ShapeDtypeStruct([batch_size, self.action_dim], jnp.float32),
                 tokenized_prompt=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32),
                 tokenized_prompt_mask=jax.ShapeDtypeStruct([batch_size, self.max_token_len], bool),
