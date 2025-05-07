@@ -30,11 +30,21 @@ class ModelType(enum.Enum):
     PI0_FAST = "pi0_fast"
 
 
-# The model always expects these images
+# # The model always expects these images
+# IMAGE_KEYS = (
+#     "base_0_rgb",
+#     "left_wrist_0_rgb",
+#     "right_wrist_0_rgb",
+# )
+
 IMAGE_KEYS = (
-    "base_0_rgb",
+    "base_0_rgb",  #camera_E
     "left_wrist_0_rgb",
     "right_wrist_0_rgb",
+    # "image_0",  #cameraA
+    "image_1", #cameraB
+    "image_2", #cameraC
+    "image_3" #cameraD
 )
 
 

@@ -46,7 +46,7 @@ def init_logging():
     logger.handlers[0].setFormatter(formatter)
 
 
-def init_wandb(config: _config.TrainConfig, *, resuming: bool, log_code: bool = False, enabled: bool = True):
+def init_wandb(config: _config.TrainConfig, *, resuming: bool, finetune: bool, log_code: bool = False, enabled: bool = True):
     if not enabled:
         wandb.init(mode="disabled")
         return
@@ -54,7 +54,7 @@ def init_wandb(config: _config.TrainConfig, *, resuming: bool, log_code: bool = 
     ckpt_dir = config.checkpoint_dir
     if not ckpt_dir.exists():
         raise FileNotFoundError(f"Checkpoint directory {ckpt_dir} does not exist.")
-    if resuming:
+    if resuming and not finetune:
         run_id = (ckpt_dir / "wandb_id.txt").read_text().strip()
         wandb.init(id=run_id, resume="must", project=config.project_name)
     else:
@@ -82,7 +82,7 @@ def _load_weights_and_validate(loader: _weight_loaders.WeightLoader, params_shap
 
 @at.typecheck
 def init_train_state(
-    config: _config.TrainConfig, init_rng: at.KeyArrayLike, mesh: jax.sharding.Mesh, *, resume: bool
+    config: _config.TrainConfig, init_rng: at.KeyArrayLike, mesh: jax.sharding.Mesh, *, resume: bool, finetune: bool
 ) -> tuple[training_utils.TrainState, Any]:
     tx = _optimizer.create_optimizer(config.optimizer, config.lr_schedule, weight_decay_mask=None)
 
@@ -114,11 +114,14 @@ def init_train_state(
 
     train_state_shape = jax.eval_shape(init, init_rng)
     state_sharding = sharding.fsdp_sharding(train_state_shape, mesh, log=True)
-
-    if resume:
+    without_pretrain_param = config.without_pretrain_param
+    if resume or finetune:
         return train_state_shape, state_sharding
 
-    partial_params = _load_weights_and_validate(config.weight_loader, train_state_shape.params.to_pure_dict())
+    if without_pretrain_param is False:
+        partial_params = _load_weights_and_validate(config.weight_loader, train_state_shape.params.to_pure_dict())
+    elif without_pretrain_param:
+        partial_params = None
     replicated_sharding = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec())
 
     # Initialize the train state and mix in the partial params.
@@ -191,6 +194,13 @@ def train_step(
 
 
 def main(config: _config.TrainConfig):
+    for i in range(5):
+        print("!!!Using devices:", jax.devices())
+    # # # 在main函数开头添加：
+    # physical_devices = jax.devices()  # 获取所有物理设备
+    # used_devices = [physical_devices[0]]  # 显式选择第0张卡
+    # jax.config.update('jax_platforms', used_devices)  # 强制JAX使用指定设备
+
     init_logging()
     logging.info(f"Running on: {platform.node()}")
 
@@ -208,13 +218,17 @@ def main(config: _config.TrainConfig):
     data_sharding = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec(sharding.DATA_AXIS))
     replicated_sharding = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec())
 
+    # config.resume=True
+    # config.checkpoint_dir = "/media/lei.mao/luke_yu/openpi_vlabench/openpi/checkpoints/pi0_libero_low_mem_finetune-select_fruit100_onlycameraBCDE_yjj/vlabench_pi0_libero_low_mem_finetune-select_fruit100_yjj_experiment_only_cameraBCDE_add_condiment_1_200/20000"
+
     checkpoint_manager, resuming = _checkpoints.initialize_checkpoint_dir(
         config.checkpoint_dir,
         keep_period=config.keep_period,
         overwrite=config.overwrite,
         resume=config.resume,
+        finetune=config.finetune
     )
-    init_wandb(config, resuming=resuming, enabled=config.wandb_enabled)
+    init_wandb(config, resuming=resuming, finetune=config.finetune, enabled=config.wandb_enabled)
 
     data_loader = _data_loader.create_data_loader(
         config,
@@ -226,12 +240,14 @@ def main(config: _config.TrainConfig):
     batch = next(data_iter)
     logging.info(f"Initialized data loader:\n{training_utils.array_tree_to_info(batch)}")
 
-    train_state, train_state_sharding = init_train_state(config, init_rng, mesh, resume=resuming)
+    train_state, train_state_sharding = init_train_state(config, init_rng, mesh, resume=resuming, finetune=config.finetune)
     jax.block_until_ready(train_state)
     logging.info(f"Initialized train state:\n{training_utils.array_tree_to_info(train_state.params)}")
 
     if resuming:
         train_state = _checkpoints.restore_state(checkpoint_manager, train_state, data_loader)
+    elif config.finetune:
+        train_state = _checkpoints.restore_state(checkpoint_manager, train_state, data_loader, config.finetune_checkpoint_dir)
 
     ptrain_step = jax.jit(
         functools.partial(train_step, config),
@@ -247,6 +263,14 @@ def main(config: _config.TrainConfig):
         total=config.num_train_steps,
         dynamic_ncols=True,
     )
+    
+    if config.finetune:
+        pbar = tqdm.tqdm(
+            range(0, 10010),
+            initial=0,
+            total=10010,
+            dynamic_ncols=True,
+        )
 
     infos = []
     for step in pbar:

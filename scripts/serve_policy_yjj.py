@@ -18,6 +18,7 @@ class EnvMode(enum.Enum):
     ALOHA_SIM = "aloha_sim"
     DROID = "droid"
     LIBERO = "libero"
+    VLABENCH = "vlabench"
 
 
 @dataclasses.dataclass
@@ -47,7 +48,7 @@ class Args:
     default_prompt: str | None = None
 
     # Port to serve the policy on.
-    port: int = 8013
+    port: int = 8000
     # Record the policy's behavior for debugging.
     record: bool = False
 
@@ -120,3 +121,11 @@ def main(args: Args) -> None:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, force=True)
     main(tyro.cli(Args))
+
+# uv run scripts/serve_policy.py policy:checkpoint --policy.config=pi0_fast-VLABench-finetune-yjj --policy.dir=checkpoints/pi0_fast-VLABench-finetune-yjj/vlabench-fintune-pipeline_experiment/29999
+
+
+
+
+
+

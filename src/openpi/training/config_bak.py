@@ -331,7 +331,7 @@ class LeRobotVLABenchDataConfig(DataConfigFactory):
     For your own dataset, you can copy this class and modify the transforms to match your dataset based on the
     comments below.
     """
-    action_sequence_keys: Sequence[str] = ("action",)  # FIXME
+
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         # The repack transform is *only* applied to the data coming from the dataset,
@@ -344,12 +344,12 @@ class LeRobotVLABenchDataConfig(DataConfigFactory):
         # The repack transform simply remaps key names here.
         repack_transform = _transforms.Group(
             inputs=[
-                _transforms.RepackTransform(  #把右边的映射为左边的
+                _transforms.RepackTransform(
                     {
-                        "observation/image": "observation.image_4",
-                        "observation/wrist_image": "observation.image_wrist",
-                        "observation/state": "observation.state",
-                        "actions": "action",
+                        "observation/image": "image",
+                        # "observation/wrist_image": "wrist_image",
+                        "observation/state": "state",
+                        "actions": "actions",
                         "prompt": "prompt",
                     }
                 )
@@ -395,225 +395,8 @@ class LeRobotVLABenchDataConfig(DataConfigFactory):
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
-            action_sequence_keys=self.action_sequence_keys,
         )
 
-@dataclasses.dataclass(frozen=True)
-class LeRobotVLABenchDataConfigCameraA(DataConfigFactory):
-    """
-    This config is used to configure transforms that are applied at various parts of the data pipeline.
-    For your own dataset, you can copy this class and modify the transforms to match your dataset based on the
-    comments below.
-    """
-    action_sequence_keys: Sequence[str] = ("action",)  # FIXME
-    @override
-    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-        # The repack transform is *only* applied to the data coming from the dataset,
-        # and *not* during inference. We can use it to make inputs from the dataset look
-        # as close as possible to those coming from the inference environment (e.g. match the keys).
-        # Below, we match the keys in the dataset (which we defined in the data conversion script) to
-        # the keys we use in our inference pipeline (defined in the inference script for libero).
-        # For your own dataset, first figure out what keys your environment passes to the policy server
-        # and then modify the mappings below so your dataset's keys get matched to those target keys.
-        # The repack transform simply remaps key names here.
-        repack_transform = _transforms.Group(
-            inputs=[
-                _transforms.RepackTransform(  #把右边的映射为左边的
-                    {
-                        # "observation/image": "observation.image_4",
-                        # "observation/wrist_image": "observation.image_wrist",
-                        "observation/image_0":"observation.image_0",
-                        "observation/state": "observation.state",
-                        "actions": "action",
-                        "prompt": "prompt",
-                    }
-                )
-            ]
-        )
-
-        # The data transforms are applied to the data coming from the dataset *and* during inference.
-        # Below, we define the transforms for data going into the model (``inputs``) and the transforms
-        # for data coming out of the model (``outputs``) (the latter is only used during inference).
-        # We defined these transforms in `libero_policy.py`. You can check the detailed comments there for
-        # how to modify the transforms to match your dataset. Once you created your own transforms, you can
-        # replace the transforms below with your own.
-        data_transforms = _transforms.Group(
-            inputs=[vlabench_policy.VLABenchInputsCameraA(action_dim=model_config.action_dim, model_type=model_config.model_type)],
-            outputs=[vlabench_policy.VLABenchOutputs()],
-        )
-
-        # One additional data transform: pi0 models are trained on delta actions (relative to the first
-        # state in each action chunk). IF your data has ``absolute`` actions (e.g. target joint angles)
-        # you can uncomment the following line to convert the actions to delta actions. The only exception
-        # is for the gripper actions which are always absolute.
-        # In the example below, we would apply the delta conversion to the first 6 actions (joints) and
-        # leave the 7th action (gripper) unchanged, i.e. absolute.
-        # In Libero, the raw actions in the dataset are already delta actions, so we *do not* need to
-        # apply a separate delta conversion (that's why it's commented out). Choose whether to apply this
-        # transform based on whether your dataset uses ``absolute`` or ``delta`` actions out of the box.
-
-        # TODO(karl): comment this out once we have updated the Libero checkpoints to not use
-        # the delta action transform
-        delta_action_mask = _transforms.make_bool_mask(6, -1)
-        data_transforms = data_transforms.push(
-            inputs=[_transforms.DeltaActions(delta_action_mask)],
-            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
-        )
-
-        # Model transforms include things like tokenizing the prompt and action targets
-        # You do not need to change anything here for your own dataset.
-        model_transforms = ModelTransformFactory()(model_config)
-
-        # We return all data transforms for training and inference. No need to change anything here.
-        return dataclasses.replace(
-            self.create_base_config(assets_dirs),
-            repack_transforms=repack_transform,
-            data_transforms=data_transforms,
-            model_transforms=model_transforms,
-            action_sequence_keys=self.action_sequence_keys,
-        )
-    
-@dataclasses.dataclass(frozen=True)
-class LeRobotVLABenchDataConfigCameraB(DataConfigFactory):
-    """
-    This config is used to configure transforms that are applied at various parts of the data pipeline.
-    For your own dataset, you can copy this class and modify the transforms to match your dataset based on the
-    comments below.
-    """
-    action_sequence_keys: Sequence[str] = ("action",)  # FIXME
-    @override
-    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-        repack_transform = _transforms.Group(
-            inputs=[
-                _transforms.RepackTransform(  #把右边的映射为左边的
-                    {
-                        # "observation/image": "observation.image_4",
-                        # "observation/wrist_image": "observation.image_wrist",
-                        "observation/image_1":"observation.image_1",
-                        "observation/state": "observation.state",
-                        "actions": "action",
-                        "prompt": "prompt",
-                    }
-                )
-            ]
-        )
-
-        data_transforms = _transforms.Group(
-            inputs=[vlabench_policy.VLABenchInputsCameraB(action_dim=model_config.action_dim, model_type=model_config.model_type)],
-            outputs=[vlabench_policy.VLABenchOutputs()],
-        )
-
-        delta_action_mask = _transforms.make_bool_mask(6, -1)
-        data_transforms = data_transforms.push(
-            inputs=[_transforms.DeltaActions(delta_action_mask)],
-            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
-        )
-
-        model_transforms = ModelTransformFactory()(model_config)
-
-        return dataclasses.replace(
-            self.create_base_config(assets_dirs),
-            repack_transforms=repack_transform,
-            data_transforms=data_transforms,
-            model_transforms=model_transforms,
-            action_sequence_keys=self.action_sequence_keys,
-        )    
-    
-@dataclasses.dataclass(frozen=True)
-class LeRobotVLABenchDataConfigCameraBC(DataConfigFactory):
-    """
-    This config is used to configure transforms that are applied at various parts of the data pipeline.
-    For your own dataset, you can copy this class and modify the transforms to match your dataset based on the
-    comments below.
-    """
-    action_sequence_keys: Sequence[str] = ("action",)  # FIXME
-    @override
-    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-        repack_transform = _transforms.Group(
-            inputs=[
-                _transforms.RepackTransform(  #把右边的映射为左边的
-                    {
-                        # "observation/image": "observation.image_4",
-                        # "observation/wrist_image": "observation.image_wrist",
-                        "observation/image_1":"observation.image_1",
-                        "observation/image_2":"observation.image_2",
-                        "observation/state": "observation.state",
-                        "actions": "action",
-                        "prompt": "prompt",
-                    }
-                )
-            ]
-        )
-
-        data_transforms = _transforms.Group(
-            inputs=[vlabench_policy.VLABenchInputsCameraBC(action_dim=model_config.action_dim, model_type=model_config.model_type)],
-            outputs=[vlabench_policy.VLABenchOutputs()],
-        )
-
-        delta_action_mask = _transforms.make_bool_mask(6, -1)
-        data_transforms = data_transforms.push(
-            inputs=[_transforms.DeltaActions(delta_action_mask)],
-            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
-        )
-
-        model_transforms = ModelTransformFactory()(model_config)
-
-        return dataclasses.replace(
-            self.create_base_config(assets_dirs),
-            repack_transforms=repack_transform,
-            data_transforms=data_transforms,
-            model_transforms=model_transforms,
-            action_sequence_keys=self.action_sequence_keys,
-        )
-
-@dataclasses.dataclass(frozen=True)
-class LeRobotVLABenchDataConfigCameraBCDE(DataConfigFactory):
-    """
-    This config is used to configure transforms that are applied at various parts of the data pipeline.
-    For your own dataset, you can copy this class and modify the transforms to match your dataset based on the
-    comments below.
-    """
-    action_sequence_keys: Sequence[str] = ("action",)  # FIXME
-    @override
-    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-        repack_transform = _transforms.Group(
-            inputs=[
-                _transforms.RepackTransform(  #把右边的映射为左边的
-                    {
-                        "observation/image": "observation.image_4",
-                        # "observation/wrist_image": "observation.image_wrist",
-                        "observation/image_1":"observation.image_1",
-                        "observation/image_2":"observation.image_2",
-                        "observation/image_3":"observation.image_3",
-                        # "observation/image_4":"observation.image_4",
-                        "observation/state": "observation.state",
-                        "actions": "action",
-                        "prompt": "prompt",
-                    }
-                )
-            ]
-        )
-
-        data_transforms = _transforms.Group(
-            inputs=[vlabench_policy.VLABenchInputsCameraBCDE(action_dim=model_config.action_dim, model_type=model_config.model_type)],
-            outputs=[vlabench_policy.VLABenchOutputs()],
-        )
-
-        delta_action_mask = _transforms.make_bool_mask(6, -1)
-        data_transforms = data_transforms.push(
-            inputs=[_transforms.DeltaActions(delta_action_mask)],
-            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
-        )
-
-        model_transforms = ModelTransformFactory()(model_config)
-
-        return dataclasses.replace(
-            self.create_base_config(assets_dirs),
-            repack_transforms=repack_transform,
-            data_transforms=data_transforms,
-            model_transforms=model_transforms,
-            action_sequence_keys=self.action_sequence_keys,
-        )
 
 @dataclasses.dataclass(frozen=True)
 class TrainConfig:
@@ -647,8 +430,6 @@ class TrainConfig:
     # Base directory for checkpoints.
     checkpoint_base_dir: str = "./checkpoints"
 
-    finetune_checkpoint_dir: str = "./"   #包含到原始实验名字的目录，重新会自动找可识别的step最大的params
-
     # Random seed that will be used by random generators during training.
     seed: int = 42
     # Global batch size.
@@ -657,7 +438,7 @@ class TrainConfig:
     # will increase memory and CPU usage.
     num_workers: int = 2
     # Number of train steps (batches) to run.
-    num_train_steps: int = 20_000
+    num_train_steps: int = 30_000
 
     # How often (in steps) to log training metrics.
     log_interval: int = 100
@@ -670,10 +451,6 @@ class TrainConfig:
     overwrite: bool = False
     # If true, will resume training from the last checkpoint.
     resume: bool = False
-    # If true, will finetune training from the finetune_checkpoint_dir.
-    finetune: bool = False
-
-    without_pretrain_param: bool = False
 
     # If true, will enable wandb logging.
     wandb_enabled: bool = True
@@ -697,8 +474,6 @@ class TrainConfig:
         """Get the checkpoint directory for this config."""
         if not self.exp_name:
             raise ValueError("--exp_name must be set")
-        # if self.finetune:
-        #     return pathlib.Path(self.finetune_checkpoint_dir).resolve()  
         return (pathlib.Path(self.checkpoint_base_dir) / self.name / self.exp_name).resolve()
 
     @property
@@ -803,7 +578,7 @@ _CONFIGS = [
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
         # Below you can define other hyperparameters like the learning rate, number of training steps, etc.
         # Check the base TrainConfig class for a full list of available hyperparameters.
-        num_train_steps=20_000,
+        num_train_steps=30_000,
     ),
 
     TrainConfig(
@@ -831,132 +606,7 @@ _CONFIGS = [
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
         # Below you can define other hyperparameters like the learning rate, number of training steps, etc.
         # Check the base TrainConfig class for a full list of available hyperparameters.
-        num_train_steps=20_000,
-    ),
-
-    TrainConfig(
-        # Change the name to reflect your model and dataset.
-        name="pi0_libero-select_fruit_finetune100_onlycameraA_yjj",
-        # Here you define the model config -- In this example we use pi0 as the model
-        # architecture and perform *full* finetuning. in the examples below we show how to modify
-        # this to perform *low-memory* (LORA) finetuning and use pi0-FAST as an alternative architecture.
-        model=pi0.Pi0Config(),
-        # Here you define the dataset you are training on. In this example we use the Libero
-        # dataset. For your own dataset, you can change the repo_id to point to your dataset.
-        # Also modify the DataConfig to use the new config you made for your dataset above.
-        data=LeRobotVLABenchDataConfigCameraA(
-            # repo_id="select_fruit_none_distractor_v3_100/select_fruit_none_distractor_v3_100",
-            # repo_id="add_condiment_1_200/add_condiment_1_200",
-            # repo_id="select_fruit_fixed_1_200/select_fruit_fixed_1_200",
-            # repo_id="select_chemistry_tube_1_200/select_chemistry_tube_1_200",
-            # repo_id="insert_flower_1_200_v2/insert_flower_1_200_v2",
-            # repo_id="select_fruit_1_200_diff/select_fruit_1_200_diff",
-            # repo_id="select_fruit_1_50_diff/select_fruit_1_50_diff",
-            repo_id="add_condiment_1_50_diff/add_condiment_1_50_diff",
-            # repo_id="select_chemistry_tube_1_200_diff/select_chemistry_tube_1_200_diff",
-            # repo_id="select_chemistry_tube_1_50_diff/select_chemistry_tube_1_50_diff",
-            base_config=DataConfig(
-                local_files_only=True,  # Set to True for local-only datasets.
-                prompt_from_task=True,
-            ),
-        ),
-        # Here you define which pre-trained checkpoint you want to load to initialize the model.
-        # This should match the model config you chose above -- i.e. in this case we use the pi0 base model.
-        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        # Below you can define other hyperparameters like the learning rate, number of training steps, etc.
-        # Check the base TrainConfig class for a full list of available hyperparameters.
-        num_train_steps=20_000,
-    ),
-
-    TrainConfig(
-        # Change the name to reflect your model and dataset.
-        name="pi0_libero-select_fruit_finetune100_onlycameraB_yjj",
-        # Here you define the model config -- In this example we use pi0 as the model
-        # architecture and perform *full* finetuning. in the examples below we show how to modify
-        # this to perform *low-memory* (LORA) finetuning and use pi0-FAST as an alternative architecture.
-        model=pi0.Pi0Config(),
-        # Here you define the dataset you are training on. In this example we use the Libero
-        # dataset. For your own dataset, you can change the repo_id to point to your dataset.
-        # Also modify the DataConfig to use the new config you made for your dataset above.
-        data=LeRobotVLABenchDataConfigCameraB(
-            # repo_id="select_fruit_none_distractor_v3_100/select_fruit_none_distractor_v3_100",
-            # repo_id="add_condiment_1_200/add_condiment_1_200",
-            # repo_id="select_fruit_fixed_1_200/select_fruit_fixed_1_200",
-            # repo_id="select_chemistry_tube_1_200/select_chemistry_tube_1_200",
-            repo_id="insert_flower_1_200_v2/insert_flower_1_200_v2",
-            base_config=DataConfig(
-                local_files_only=True,  # Set to True for local-only datasets.
-                prompt_from_task=True,
-            ),
-        ),
-        # Here you define which pre-trained checkpoint you want to load to initialize the model.
-        # This should match the model config you chose above -- i.e. in this case we use the pi0 base model.
-        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        # Below you can define other hyperparameters like the learning rate, number of training steps, etc.
-        # Check the base TrainConfig class for a full list of available hyperparameters.
-        num_train_steps=20_000,
-    ),
-
-    TrainConfig(
-        # Change the name to reflect your model and dataset.
-        name="pi0_libero-select_fruit_finetune100_onlycameraBC_yjj",
-        # Here you define the model config -- In this example we use pi0 as the model
-        # architecture and perform *full* finetuning. in the examples below we show how to modify
-        # this to perform *low-memory* (LORA) finetuning and use pi0-FAST as an alternative architecture.
-        model=pi0.Pi0Config(),
-        # Here you define the dataset you are training on. In this example we use the Libero
-        # dataset. For your own dataset, you can change the repo_id to point to your dataset.
-        # Also modify the DataConfig to use the new config you made for your dataset above.
-        data=LeRobotVLABenchDataConfigCameraBC(
-            # repo_id="select_fruit_none_distractor_v3_100/select_fruit_none_distractor_v3_100",
-            # repo_id="add_condiment_1_200/add_condiment_1_200",
-            # repo_id="select_fruit_fixed_1_200/select_fruit_fixed_1_200",
-            # repo_id="select_chemistry_tube_1_200/select_chemistry_tube_1_200",
-            repo_id="insert_flower_1_200_v2/insert_flower_1_200_v2",
-            base_config=DataConfig(
-                local_files_only=True,  # Set to True for local-only datasets.
-                prompt_from_task=True,
-            ),
-        ),
-        # Here you define which pre-trained checkpoint you want to load to initialize the model.
-        # This should match the model config you chose above -- i.e. in this case we use the pi0 base model.
-        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        # Below you can define other hyperparameters like the learning rate, number of training steps, etc.
-        # Check the base TrainConfig class for a full list of available hyperparameters.
-        num_train_steps=20_000,
-    ),
-
-    TrainConfig(
-        # Change the name to reflect your model and dataset.
-        name="pi0_libero-select_fruit_finetune100_onlycameraBCDE_yjj",
-        # Here you define the model config -- In this example we use pi0 as the model
-        # architecture and perform *full* finetuning. in the examples below we show how to modify
-        # this to perform *low-memory* (LORA) finetuning and use pi0-FAST as an alternative architecture.
-        model=pi0.Pi0Config(camera_config="BCDE"),
-        # Here you define the dataset you are training on. In this example we use the Libero
-        # dataset. For your own dataset, you can change the repo_id to point to your dataset.
-        # Also modify the DataConfig to use the new config you made for your dataset above.
-        data=LeRobotVLABenchDataConfigCameraBCDE(
-            # repo_id="select_fruit_none_distractor_v3_100/select_fruit_none_distractor_v3_100",
-            # repo_id="add_condiment_1_200/add_condiment_1_200",
-            # repo_id="select_fruit_fixed_1_200/select_fruit_fixed_1_200",
-            # repo_id="select_chemistry_tube_1_200/select_chemistry_tube_1_200",
-            # repo_id="insert_flower_1_200_v2/insert_flower_1_200_v2",
-            # repo_id="select_fruit_1_200_diff/select_fruit_1_200_diff",
-            # repo_id="select_fruit_1_50_diff/select_fruit_1_50_diff",
-            # repo_id="select_chemistry_tube_1_50_diff/select_chemistry_tube_1_50_diff",
-            repo_id="add_condiment_1_50_diff/add_condiment_1_50_diff",
-            base_config=DataConfig(
-                local_files_only=True,  # Set to True for local-only datasets.
-                prompt_from_task=True,
-            ),
-        ),
-        # Here you define which pre-trained checkpoint you want to load to initialize the model.
-        # This should match the model config you chose above -- i.e. in this case we use the pi0 base model.
-        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        # Below you can define other hyperparameters like the learning rate, number of training steps, etc.
-        # Check the base TrainConfig class for a full list of available hyperparameters.
-        num_train_steps=20_000,
+        num_train_steps=30_000,
     ),
 
     TrainConfig(
@@ -971,137 +621,7 @@ _CONFIGS = [
             ),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        num_train_steps=20_000,
-        # The freeze filter defines which parameters should be frozen during training.
-        # We have a convenience function in the model config that returns the default freeze filter
-        # for the given model config for LoRA finetuning. Just make sure it matches the model config
-        # you chose above.
-        freeze_filter=pi0.Pi0Config(
-            paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
-        ).get_freeze_filter(),
-        # Turn off EMA for LoRA finetuning.
-        ema_decay=None,
-    ),
-
-    TrainConfig(
-        name="pi0_libero_low_mem_finetune-select_fruit100_onlycameraA_yjj",
-        # Here is an example of loading a pi0 model for LoRA fine-tuning.
-        model=pi0.Pi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora", camera_config="A"),
-        data=LeRobotVLABenchDataConfigCameraA(
-            # repo_id="select_fruit_none_distractor_v3_100/select_fruit_none_distractor_v3_100",
-            # repo_id="add_condiment_1_200/add_condiment_1_200",
-            # repo_id="insert_flower_fixed_1_pos/insert_flower_fixed_1_pos",
-            # repo_id="select_fruit_fixed_1_200/select_fruit_fixed_1_200",
-            # repo_id="select_chemistry_tube_1_200/select_chemistry_tube_1_200",
-            # repo_id="insert_flower_1_200_v2/insert_flower_1_200_v2",
-            # repo_id="select_fruit_1_200_diff/select_fruit_1_200_diff",
-            repo_id="select_fruit_1_50_diff/select_fruit_1_50_diff",
-            # repo_id="select_chemistry_tube_1_50_diff/select_chemistry_tube_1_50_diff",
-            # repo_id="add_condiment_1_50_diff/add_condiment_1_50_diff",
-            # repo_id="add_condiment_1_50_diff/add_condiment_1_50_diff",
-            # repo_id="insert_flower_1_200_diff/insert_flower_1_200_diff",
-            base_config=DataConfig(
-                local_files_only=True,  # Set to True for local-only datasets.
-                prompt_from_task=True,
-            ),
-        ),
-        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        num_train_steps=20_000,
-        # The freeze filter defines which parameters should be frozen during training.
-        # We have a convenience function in the model config that returns the default freeze filter
-        # for the given model config for LoRA finetuning. Just make sure it matches the model config
-        # you chose above.
-        freeze_filter=pi0.Pi0Config(
-            paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
-        ).get_freeze_filter(),
-        # Turn off EMA for LoRA finetuning.
-        ema_decay=None,
-    ),
-
-    TrainConfig(
-        name="pi0_libero_low_mem_finetune-select_fruit100_onlycameraB_yjj",
-        # Here is an example of loading a pi0 model for LoRA fine-tuning.
-        model=pi0.Pi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
-        data=LeRobotVLABenchDataConfigCameraB(
-            # repo_id="select_fruit_none_distractor_v3_100/select_fruit_none_distractor_v3_100",
-            # repo_id="add_condiment_1_200/add_condiment_1_200",
-            # repo_id="select_fruit_fixed_1_200/select_fruit_fixed_1_200",
-            # repo_id="select_chemistry_tube_1_200/select_chemistry_tube_1_200",
-            repo_id="insert_flower_1_200_v2/insert_flower_1_200_v2",
-            base_config=DataConfig(
-                local_files_only=True,  # Set to True for local-only datasets.
-                prompt_from_task=True,
-            ),
-        ),
-        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        num_train_steps=20_000,
-        # The freeze filter defines which parameters should be frozen during training.
-        # We have a convenience function in the model config that returns the default freeze filter
-        # for the given model config for LoRA finetuning. Just make sure it matches the model config
-        # you chose above.
-        freeze_filter=pi0.Pi0Config(
-            paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
-        ).get_freeze_filter(),
-        # Turn off EMA for LoRA finetuning.
-        ema_decay=None,
-    ),
-
-    TrainConfig(
-        name="pi0_libero_low_mem_finetune-select_fruit100_onlycameraBC_yjj",
-        # Here is an example of loading a pi0 model for LoRA fine-tuning.
-        model=pi0.Pi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
-        data=LeRobotVLABenchDataConfigCameraBC(
-            # repo_id="select_fruit_none_distractor_v3_100/select_fruit_none_distractor_v3_100",
-            # repo_id="select_fruit_4_fixed_pos_170/select_fruit_4_fixed_pos_170",
-            # repo_id="select_fruit_none_distractor_1_pos_v1_700/select_fruit_none_distractor_1_pos_v1_700",
-            # repo_id="select_fruit_4_fixed_pos_v4/select_fruit_4_fixed_pos_v4",
-            # repo_id="select_fruit_1_fixed_pos_100_v3/select_fruit_1_fixed_pos_100_v3",
-            # repo_id="add_condiment_1_200/add_condiment_1_200",
-            # repo_id="select_fruit_fixed_1_200/select_fruit_fixed_1_200",
-            # repo_id="select_chemistry_tube_1_200/select_chemistry_tube_1_200",
-            repo_id="insert_flower_1_200_v2/insert_flower_1_200_v2",
-            base_config=DataConfig(
-                local_files_only=True,  # Set to True for local-only datasets.
-                prompt_from_task=True,
-            ),
-        ),
-        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        num_train_steps=20_000,
-        # The freeze filter defines which parameters should be frozen during training.
-        # We have a convenience function in the model config that returns the default freeze filter
-        # for the given model config for LoRA finetuning. Just make sure it matches the model config
-        # you chose above.
-        freeze_filter=pi0.Pi0Config(
-            paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
-        ).get_freeze_filter(),
-        # Turn off EMA for LoRA finetuning.
-        ema_decay=None,
-    ),
-
-    TrainConfig(
-        name="pi0_libero_low_mem_finetune-select_fruit100_onlycameraBCDE_yjj",
-        # Here is an example of loading a pi0 model for LoRA fine-tuning.
-        model=pi0.Pi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora", camera_config="BCDE"),
-        data=LeRobotVLABenchDataConfigCameraBCDE(
-            # repo_id="select_fruit_none_distractor_v3_100/select_fruit_none_distractor_v3_100",
-            # repo_id="select_fruit_none_distractor_1_pos_v1_700/select_fruit_none_distractor_1_pos_v1_700",
-            # repo_id="select_fruit_4_fixed_pos_120/select_fruit_4_fixed_pos_120",
-            # repo_id="add_condiment_1_200/add_condiment_1_200",
-            # repo_id="select_fruit_fixed_1_200/select_fruit_fixed_1_200",
-            # repo_id="select_chemistry_tube_1_50_diff/select_chemistry_tube_1_50_diff",
-            # repo_id="add_condiment_1_50_diff/add_condiment_1_50_diff",
-            # repo_id="insert_flower_1_200_v2/insert_flower_1_200_v2",
-            # repo_id="select_fruit_1_200_diff/select_fruit_1_200_diff",
-            repo_id="select_fruit_1_50_diff/select_fruit_1_50_diff",
-            # repo_id="insert_flower_1_200_diff/insert_flower_1_200_diff",
-            # repo_id="add_condiment_1_200_diff/add_condiment_1_200_diff",
-            base_config=DataConfig(
-                local_files_only=True,  # Set to True for local-only datasets.
-                prompt_from_task=True,
-            ),
-        ),
-        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        num_train_steps=20_000,
+        num_train_steps=30_000,
         # The freeze filter defines which parameters should be frozen during training.
         # We have a convenience function in the model config that returns the default freeze filter
         # for the given model config for LoRA finetuning. Just make sure it matches the model config
@@ -1118,14 +638,14 @@ _CONFIGS = [
         # Here is an example of loading a pi0 model for LoRA fine-tuning.
         model=pi0.Pi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
         data=LeRobotVLABenchDataConfig(
-            repo_id="select_fruit_none_distractor_v3_100/select_fruit_none_distractor_v3_100",
+            repo_id="select_fruit_none_distractor/select_fruit_none_distractor",
             base_config=DataConfig(
                 local_files_only=True,  # Set to True for local-only datasets.
                 prompt_from_task=True,
             ),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        num_train_steps=20_000,
+        num_train_steps=30_000,
         # The freeze filter defines which parameters should be frozen during training.
         # We have a convenience function in the model config that returns the default freeze filter
         # for the given model config for LoRA finetuning. Just make sure it matches the model config
@@ -1136,7 +656,6 @@ _CONFIGS = [
         # Turn off EMA for LoRA finetuning.
         ema_decay=None,
     ),
-
 
     TrainConfig(
         name="pi0_fast_libero",
@@ -1160,7 +679,7 @@ _CONFIGS = [
         ),
         # Note that we load the pi0-FAST base model checkpoint here.
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_fast_base/params"),
-        num_train_steps=20_000,
+        num_train_steps=30_000,
     ),
 
     TrainConfig(
@@ -1189,7 +708,7 @@ _CONFIGS = [
         ),
         # Note that we load the pi0-FAST base model checkpoint here.
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_fast_base/params"),
-        num_train_steps=20_000,
+        num_train_steps=30_000,
     ),
 
     TrainConfig(
@@ -1207,7 +726,7 @@ _CONFIGS = [
             ),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_fast_base/params"),
-        num_train_steps=20_000,
+        num_train_steps=30_000,
         # Again, make sure to match the model config above when extracting the freeze filter
         # that specifies which parameters should be frozen during LoRA finetuning.
         freeze_filter=pi0_fast.Pi0FASTConfig(
